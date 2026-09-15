@@ -16,10 +16,7 @@ require __DIR__ . '/includes/header.php';
 
 <?php if (isset($_GET['ok'])): ?><div class="alert alert-sucesso"><i data-lucide="check-circle" class="icon"></i> <?= htmlspecialchars($_GET['ok']) ?></div><?php endif; ?>
 
-<div class="alert alert-info">
-    <i data-lucide="info" class="icon"></i>
-    Catálogo simplificado para permitir Agendamentos e Ordens de Serviço agora. Categoria, tempo estimado e mecânicos especializados chegam na <strong>Sprint 7</strong>.
-</div>
+
 
 <div class="toolbar">
     <p style="margin:0; color:#555; font-size:13.5px;">Serviços oferecidos pela oficina.</p>
