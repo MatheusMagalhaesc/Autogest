@@ -94,12 +94,6 @@ $servicosCatalogo = listarServicos(true);
 $podeGerenciar = in_array($_SESSION['user_perfil'], ['administrador', 'recepcionista'], true);
 $podeAtualizarTecnico = in_array($_SESSION['user_perfil'], ['administrador', 'recepcionista', 'mecanico'], true);
 
-// Passos da timeline de andamento (status real armazenado só guarda o atual;
-// aqui reconstruímos uma linha do tempo simples com o que temos: abertura + status atual)
-$ordemStatus = ['agendado', 'em_atendimento', 'concluido'];
-$indiceAtual = array_search($os['status'], $ordemStatus, true);
-if ($indiceAtual === false) $indiceAtual = -1; // cancelado
-
 $tituloPagina = 'OS #' . str_pad($os['id'], 4, '0', STR_PAD_LEFT);
 require __DIR__ . '/includes/header.php';
 ?>
@@ -108,266 +102,185 @@ require __DIR__ . '/includes/header.php';
 <?php if ($sucesso): ?><div class="alert alert-sucesso"><i data-lucide="check-circle" class="icon"></i> <?= htmlspecialchars($sucesso) ?></div><?php endif; ?>
 <?php if ($erro): ?><div class="alert alert-erro"><i data-lucide="alert-triangle" class="icon"></i> <?= htmlspecialchars($erro) ?></div><?php endif; ?>
 
-<!-- Cabeçalho da OS -->
-<div class="detail-header">
-    <div>
-        <div class="breadcrumb">
-            <a href="ordens_servico.php" style="color:inherit;">Ordens de Serviço</a>
-            <i data-lucide="chevron-right"></i>
-            <span>OS #<?= str_pad($os['id'], 4, '0', STR_PAD_LEFT) ?></span>
-        </div>
-        <div class="detail-header__main">
-            <div class="detail-header__icon"><i data-lucide="car"></i></div>
+<div class="cards-grid" style="grid-template-columns: 1fr; gap: 22px;">
+
+    <!-- Cabeçalho da OS -->
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px;">
             <div>
-                <h2><?= htmlspecialchars($os['cliente_nome']) ?> · <?= htmlspecialchars($os['marca'] ?: '') ?> <?= htmlspecialchars($os['veiculo_modelo']) ?></h2>
-                <p><?= htmlspecialchars($os['veiculo_placa']) ?> · <?= number_format((int) $os['km_atual'], 0, ',', '.') ?> km · aberta em <?= date('d/m/Y', strtotime($os['criado_em'])) ?></p>
+                <div class="card-icon-wrap laranja"><i data-lucide="clipboard-list"></i></div>
+                <h3>OS #<?= str_pad($os['id'], 4, '0', STR_PAD_LEFT) ?> — <?= htmlspecialchars($os['cliente_nome']) ?></h3>
+                <p><?= htmlspecialchars($os['marca'] ?: '') ?> <?= htmlspecialchars($os['veiculo_modelo']) ?> · <?= htmlspecialchars($os['veiculo_placa']) ?> · Aberta em <?= date('d/m/Y H:i', strtotime($os['criado_em'])) ?></p>
+                <span class="badge badge-status-<?= $os['status'] ?>" style="font-size:12px; padding:6px 14px;"><?= STATUS_OS[$os['status']] ?></span>
             </div>
+
+            <?php if ($os['status'] !== 'cancelado' && $os['status'] !== 'concluido'): ?>
+            <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="hidden" name="acao" value="status">
+                <select name="novo_status" style="padding:9px 12px; border:1.5px solid var(--cinza-claro); border-radius:8px; font-size:13px;">
+                    <?php foreach (STATUS_OS as $chave => $label): ?>
+                        <option value="<?= $chave ?>" <?= $os['status'] === $chave ? 'selected' : '' ?>><?= $label ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button type="submit" class="btn btn-secondary btn-sm"><i data-lucide="refresh-cw" class="icon"></i> Atualizar status</button>
+            </form>
+            <?php endif; ?>
         </div>
+
+        <div class="form-row" style="margin-top:16px;">
+            <div><strong style="font-size:12px; color:#888;">TELEFONE DO CLIENTE</strong><p style="margin:2px 0 0;"><?= htmlspecialchars($os['cliente_telefone']) ?></p></div>
+            <div><strong style="font-size:12px; color:#888;">KM NA ABERTURA</strong><p style="margin:2px 0 0;"><?= number_format((int) $os['km_atual'], 0, ',', '.') ?> km</p></div>
+        </div>
+        <div style="margin-top:10px;"><strong style="font-size:12px; color:#888;">PROBLEMA RELATADO PELO CLIENTE</strong><p style="margin:4px 0 0;"><?= nl2br(htmlspecialchars($os['problema_relatado'] ?: '—')) ?></p></div>
     </div>
 
-    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-        <span class="badge badge-status-<?= $os['status'] ?>" style="font-size:11.5px; padding:6px 13px;"><?= STATUS_OS[$os['status']] ?></span>
-        <?php if ($os['status'] !== 'cancelado' && $os['status'] !== 'concluido'): ?>
-        <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" style="display:flex; gap:7px; align-items:center;">
-            <input type="hidden" name="acao" value="status">
-            <select name="novo_status" style="padding:8px 10px; border:1.5px solid var(--cinza-claro); border-radius:8px; font-size:12.5px;">
-                <?php foreach (STATUS_OS as $chave => $label): ?>
-                    <option value="<?= $chave ?>" <?= $os['status'] === $chave ? 'selected' : '' ?>><?= $label ?></option>
+    <!-- Diagnóstico -->
+    <div class="card">
+        <div class="card-icon-wrap"><i data-lucide="stethoscope"></i></div>
+        <h3>Diagnóstico do mecânico</h3>
+        <?php if ($podeAtualizarTecnico): ?>
+        <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>">
+            <input type="hidden" name="acao" value="diagnostico">
+            <div class="form-row">
+                <div class="form-group" style="grid-column: span 2;">
+                    <label for="diagnostico">Diagnóstico</label>
+                    <textarea id="diagnostico" name="diagnostico" rows="3" placeholder="Descreva o diagnóstico técnico..."><?= htmlspecialchars($os['diagnostico'] ?? '') ?></textarea>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mecanico_id">Mecânico responsável</label>
+                    <select id="mecanico_id" name="mecanico_id">
+                        <option value="">A definir</option>
+                        <?php foreach ($mecanicos as $m): ?>
+                            <option value="<?= $m['id'] ?>" <?= $os['mecanico_id'] == $m['id'] ? 'selected' : '' ?>><?= htmlspecialchars($m['nome']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div style="display:flex; align-items:end;">
+                    <button type="submit" class="btn btn-secondary" style="width:auto; padding:11px 24px;"><i data-lucide="save" class="icon"></i> Salvar diagnóstico</button>
+                </div>
+            </div>
+        </form>
+        <?php else: ?>
+            <p><?= nl2br(htmlspecialchars($os['diagnostico'] ?: 'Nenhum diagnóstico registrado ainda.')) ?></p>
+        <?php endif; ?>
+    </div>
+
+    <!-- Itens (peças e serviços) -->
+    <div class="card">
+        <div class="card-icon-wrap sucesso"><i data-lucide="package"></i></div>
+        <h3>Peças e serviços utilizados</h3>
+
+        <?php if (empty($os['itens'])): ?>
+            <div class="empty-state">Nenhum item registrado ainda.</div>
+        <?php else: ?>
+        <table class="os-itens-table">
+            <thead><tr><th>Tipo</th><th>Descrição</th><th>Qtd</th><th>Valor unit.</th><th>Subtotal</th><th></th></tr></thead>
+            <tbody>
+                <?php foreach ($os['itens'] as $item): ?>
+                    <tr>
+                        <td><span class="badge <?= $item['tipo'] === 'peca' ? 'badge-soon' : 'badge-ok' ?>"><?= $item['tipo'] === 'peca' ? 'Peça' : 'Serviço' ?></span></td>
+                        <td><?= htmlspecialchars($item['descricao']) ?></td>
+                        <td><?= (int) $item['quantidade'] ?></td>
+                        <td>R$ <?= number_format((float) $item['valor_unitario'], 2, ',', '.') ?></td>
+                        <td>R$ <?= number_format($item['quantidade'] * $item['valor_unitario'], 2, ',', '.') ?></td>
+                        <td>
+                            <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" onsubmit="return confirm('Remover este item?');">
+                                <input type="hidden" name="acao" value="remove_item">
+                                <input type="hidden" name="item_id" value="<?= $item['id'] ?>">
+                                <button type="submit" class="btn btn-sm btn-red"><i data-lucide="trash-2" class="icon"></i></button>
+                            </form>
+                        </td>
+                    </tr>
                 <?php endforeach; ?>
-            </select>
-            <button type="submit" class="btn btn-secondary btn-sm"><i data-lucide="refresh-cw" class="icon"></i> Atualizar</button>
+                <tr class="os-total-row">
+                    <td colspan="4" style="text-align:right;">Total da OS</td>
+                    <td colspan="2">R$ <?= number_format($os['total'], 2, ',', '.') ?></td>
+                </tr>
+            </tbody>
+        </table>
+        <?php endif; ?>
+
+        <?php if ($podeAtualizarTecnico): ?>
+        <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" style="margin-top:18px; padding-top:16px; border-top:1px solid #eee;">
+            <input type="hidden" name="acao" value="add_item">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="tipo">Tipo</label>
+                    <select id="tipo" name="tipo" onchange="document.getElementById('grupo-servico-catalogo').style.display = this.value==='servico' ? 'block' : 'none';">
+                        <option value="servico">Serviço (do catálogo)</option>
+                        <option value="peca">Peça (avulsa)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="grupo-servico-catalogo">
+                    <label for="servico_id">Serviço do catálogo (opcional)</label>
+                    <select id="servico_id" name="servico_id">
+                        <option value="">Nenhum / descrição livre</option>
+                        <?php foreach ($servicosCatalogo as $s): ?>
+                            <option value="<?= $s['id'] ?>">
+                                <?= htmlspecialchars($s['nome']) ?> — R$ <?= number_format((float) $s['preco'], 2, ',', '.') ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row-3">
+                <div class="form-group">
+                    <label for="descricao">Descrição *</label>
+                    <input type="text" id="descricao" name="descricao" placeholder="Ex: Pastilha de freio dianteira">
+                </div>
+                <div class="form-group">
+                    <label for="quantidade">Quantidade</label>
+                    <input type="number" id="quantidade" name="quantidade" value="1" min="1">
+                </div>
+                <div class="form-group">
+                    <label for="valor_unitario">Valor unitário (R$) *</label>
+                    <input type="text" id="valor_unitario" name="valor_unitario" placeholder="0,00">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-success btn-sm" style="padding:9px 18px;"><i data-lucide="plus" class="icon"></i> Adicionar item</button>
         </form>
         <?php endif; ?>
     </div>
-</div>
 
-<div class="detail-grid">
+    <!-- Fotos -->
+    <div class="card">
+        <div class="card-icon-wrap"><i data-lucide="camera"></i></div>
+        <h3>Fotos do veículo</h3>
 
-    <!-- Coluna principal: abas -->
-    <div>
-        <div class="tab-card">
-            <div class="tab-nav">
-                <button type="button" class="active" onclick="mudarAba('diagnostico', this)">Diagnóstico</button>
-                <button type="button" onclick="mudarAba('itens', this)">Peças e serviços<?= !empty($os['itens']) ? ' (' . count($os['itens']) . ')' : '' ?></button>
-                <button type="button" onclick="mudarAba('fotos', this)">Fotos<?= !empty($os['fotos']) ? ' (' . count($os['fotos']) . ')' : '' ?></button>
+        <?php if (empty($os['fotos'])): ?>
+            <div class="empty-state">Nenhuma foto enviada ainda.</div>
+        <?php else: ?>
+            <div class="foto-grid">
+                <?php foreach ($os['fotos'] as $foto): ?>
+                    <div class="foto-item">
+                        <img src="<?= UPLOAD_OS_URL ?>/<?= htmlspecialchars($foto['caminho_arquivo']) ?>" alt="Foto da OS">
+                        <?php if ($podeAtualizarTecnico): ?>
+                        <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" onsubmit="return confirm('Remover esta foto?');">
+                            <input type="hidden" name="acao" value="remove_foto">
+                            <input type="hidden" name="foto_id" value="<?= $foto['id'] ?>">
+                            <button type="submit" class="foto-remove"><i data-lucide="x" style="width:12px;height:12px;"></i></button>
+                        </form>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
             </div>
+        <?php endif; ?>
 
-            <!-- Aba: Diagnóstico -->
-            <div class="tab-panel active" id="painel-diagnostico">
-                <p class="field-label">Relato do cliente</p>
-                <div class="field-value-box" style="margin-bottom:16px;"><?= nl2br(htmlspecialchars($os['problema_relatado'] ?: 'Nenhum relato registrado.')) ?></div>
-
-                <p class="field-label">Diagnóstico técnico</p>
-                <?php if ($podeAtualizarTecnico): ?>
-                <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>">
-                    <input type="hidden" name="acao" value="diagnostico">
-                    <div class="form-group">
-                        <textarea name="diagnostico" rows="4" placeholder="Descreva o diagnóstico técnico..."><?= htmlspecialchars($os['diagnostico'] ?? '') ?></textarea>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="mecanico_id">Mecânico responsável</label>
-                            <select id="mecanico_id" name="mecanico_id">
-                                <option value="">A definir</option>
-                                <?php foreach ($mecanicos as $m): ?>
-                                    <option value="<?= $m['id'] ?>" <?= $os['mecanico_id'] == $m['id'] ? 'selected' : '' ?>><?= htmlspecialchars($m['nome']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div style="display:flex; align-items:end;">
-                            <button type="submit" class="btn btn-secondary btn-sm" style="width:auto; padding:10px 20px;"><i data-lucide="save" class="icon"></i> Salvar diagnóstico</button>
-                        </div>
-                    </div>
-                </form>
-                <?php else: ?>
-                    <div class="field-value-box"><?= nl2br(htmlspecialchars($os['diagnostico'] ?: 'Nenhum diagnóstico registrado ainda.')) ?></div>
-                <?php endif; ?>
-            </div>
-
-            <!-- Aba: Itens (peças e serviços) -->
-            <div class="tab-panel" id="painel-itens">
-                <?php if (empty($os['itens'])): ?>
-                    <div class="empty-state">Nenhum item registrado ainda.</div>
-                <?php else: ?>
-                <table class="os-itens-table">
-                    <thead><tr><th>Tipo</th><th>Descrição</th><th>Qtd</th><th>Valor unit.</th><th>Subtotal</th><th></th></tr></thead>
-                    <tbody>
-                        <?php foreach ($os['itens'] as $item): ?>
-                            <tr>
-                                <td><span class="badge <?= $item['tipo'] === 'peca' ? 'badge-soon' : 'badge-ok' ?>"><?= $item['tipo'] === 'peca' ? 'Peça' : 'Serviço' ?></span></td>
-                                <td><?= htmlspecialchars($item['descricao']) ?></td>
-                                <td><?= (int) $item['quantidade'] ?></td>
-                                <td>R$ <?= number_format((float) $item['valor_unitario'], 2, ',', '.') ?></td>
-                                <td>R$ <?= number_format($item['quantidade'] * $item['valor_unitario'], 2, ',', '.') ?></td>
-                                <td>
-                                    <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" onsubmit="return confirm('Remover este item?');">
-                                        <input type="hidden" name="acao" value="remove_item">
-                                        <input type="hidden" name="item_id" value="<?= $item['id'] ?>">
-                                        <button type="submit" class="btn btn-sm btn-red"><i data-lucide="trash-2" class="icon"></i></button>
-                                    </form>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                        <tr class="os-total-row">
-                            <td colspan="4" style="text-align:right;">Total da OS</td>
-                            <td colspan="2">R$ <?= number_format($os['total'], 2, ',', '.') ?></td>
-                        </tr>
-                    </tbody>
-                </table>
-                <?php endif; ?>
-
-                <?php if ($podeAtualizarTecnico): ?>
-                <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" style="margin-top:18px; padding-top:16px; border-top:1px solid #eee;">
-                    <input type="hidden" name="acao" value="add_item">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="tipo">Tipo</label>
-                            <select id="tipo" name="tipo" onchange="document.getElementById('grupo-servico-catalogo').style.display = this.value==='servico' ? 'block' : 'none';">
-                                <option value="servico">Serviço (do catálogo)</option>
-                                <option value="peca">Peça (avulsa)</option>
-                            </select>
-                        </div>
-                        <div class="form-group" id="grupo-servico-catalogo">
-                            <label for="servico_id">Serviço do catálogo (opcional)</label>
-                            <select id="servico_id" name="servico_id">
-                                <option value="">Nenhum / descrição livre</option>
-                                <?php foreach ($servicosCatalogo as $s): ?>
-                                    <option value="<?= $s['id'] ?>">
-                                        <?= htmlspecialchars($s['nome']) ?> — R$ <?= number_format((float) $s['preco'], 2, ',', '.') ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-row-3">
-                        <div class="form-group">
-                            <label for="descricao">Descrição *</label>
-                            <input type="text" id="descricao" name="descricao" placeholder="Ex: Pastilha de freio dianteira">
-                        </div>
-                        <div class="form-group">
-                            <label for="quantidade">Quantidade</label>
-                            <input type="number" id="quantidade" name="quantidade" value="1" min="1">
-                        </div>
-                        <div class="form-group">
-                            <label for="valor_unitario">Valor unitário (R$) *</label>
-                            <input type="text" id="valor_unitario" name="valor_unitario" placeholder="0,00">
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-success btn-sm" style="padding:9px 18px;"><i data-lucide="plus" class="icon"></i> Adicionar item</button>
-                </form>
-                <?php endif; ?>
-            </div>
-
-            <!-- Aba: Fotos -->
-            <div class="tab-panel" id="painel-fotos">
-                <?php if (empty($os['fotos'])): ?>
-                    <div class="empty-state">Nenhuma foto enviada ainda.</div>
-                <?php else: ?>
-                    <div class="foto-grid">
-                        <?php foreach ($os['fotos'] as $foto): ?>
-                            <div class="foto-item">
-                                <img src="<?= UPLOAD_OS_URL ?>/<?= htmlspecialchars($foto['caminho_arquivo']) ?>" alt="Foto da OS">
-                                <?php if ($podeAtualizarTecnico): ?>
-                                <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" onsubmit="return confirm('Remover esta foto?');">
-                                    <input type="hidden" name="acao" value="remove_foto">
-                                    <input type="hidden" name="foto_id" value="<?= $foto['id'] ?>">
-                                    <button type="submit" class="foto-remove"><i data-lucide="x" style="width:12px;height:12px;"></i></button>
-                                </form>
-                                <?php endif; ?>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-
-                <?php if ($podeAtualizarTecnico): ?>
-                <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" enctype="multipart/form-data" style="margin-top:16px;">
-                    <input type="hidden" name="acao" value="upload_foto">
-                    <label class="upload-box" for="foto-input" style="display:block;">
-                        <i data-lucide="upload" class="icon"></i> Clique para escolher uma foto (JPG, PNG ou WEBP, até 5MB)
-                        <input type="file" id="foto-input" name="foto" accept="image/jpeg,image/png,image/webp" style="display:none;" onchange="this.form.submit()">
-                    </label>
-                </form>
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <a href="ordens_servico.php" class="btn btn-outline btn-sm" style="width:fit-content; padding:8px 18px;">← Voltar para Ordens de Serviço</a>
+        <?php if ($podeAtualizarTecnico): ?>
+        <form method="POST" action="os_ver.php?id=<?= $os['id'] ?>" enctype="multipart/form-data" style="margin-top:16px;">
+            <input type="hidden" name="acao" value="upload_foto">
+            <label class="upload-box" for="foto-input" style="display:block;">
+                <i data-lucide="upload" class="icon"></i> Clique para escolher uma foto (JPG, PNG ou WEBP, até 5MB)
+                <input type="file" id="foto-input" name="foto" accept="image/jpeg,image/png,image/webp" style="display:none;" onchange="this.form.submit()">
+            </label>
+        </form>
+        <?php endif; ?>
     </div>
 
-    <!-- Coluna lateral: resumo -->
-    <div>
-        <div class="summary-card">
-            <p class="summary-label">Total da OS</p>
-            <p class="summary-value">R$ <?= number_format($os['total'], 2, ',', '.') ?></p>
-            <div class="summary-actions">
-                <span class="btn btn-outline btn-sm" style="background:rgba(255,255,255,0.06); border-color:#35496B; color:#8FA3BF; cursor:not-allowed;" title="Chega na Sprint 6 — Orçamento e Aprovação">
-                    <i data-lucide="file-text" class="icon"></i> Gerar orçamento
-                </span>
-                <button type="button" class="btn btn-outline btn-sm" style="background:transparent; border-color:#35496B; color:#C7D2E2; width:auto; padding:8px 12px;" onclick="window.print()" title="Imprimir OS">
-                    <i data-lucide="printer" class="icon"></i>
-                </button>
-            </div>
-        </div>
-
-        <div class="card" style="margin-bottom:14px;">
-            <h3 style="margin-bottom:14px;">Andamento</h3>
-            <div class="timeline">
-                <div class="timeline-item">
-                    <div class="dot-col"><span class="dot done"></span><span class="line"></span></div>
-                    <div class="content">
-                        <p class="title">OS aberta</p>
-                        <p class="meta"><?= date('d/m/Y \à\s H:i', strtotime($os['criado_em'])) ?></p>
-                    </div>
-                </div>
-
-                <?php if ($os['status'] === 'cancelado'): ?>
-                    <div class="timeline-item">
-                        <div class="dot-col"><span class="dot" style="background:var(--vermelho-erro);"></span></div>
-                        <div class="content">
-                            <p class="title">Cancelada</p>
-                            <p class="meta">Atualizado em <?= date('d/m/Y \à\s H:i', strtotime($os['atualizado_em'])) ?></p>
-                        </div>
-                    </div>
-                <?php else: ?>
-                    <?php foreach ($ordemStatus as $i => $chaveStatus): ?>
-                        <?php
-                            $classeItem = '';
-                            if ($i < $indiceAtual) $dotClasse = 'done';
-                            elseif ($i === $indiceAtual) $dotClasse = 'current';
-                            else { $dotClasse = ''; $classeItem = 'futuro'; }
-                        ?>
-                        <div class="timeline-item <?= $classeItem ?>">
-                            <div class="dot-col"><span class="dot <?= $dotClasse ?>"></span><span class="line"></span></div>
-                            <div class="content">
-                                <p class="title"><?= STATUS_OS[$chaveStatus] ?></p>
-                                <?php if ($i === $indiceAtual): ?>
-                                    <p class="meta"><?= htmlspecialchars($os['mecanico_nome'] ?: 'Sem mecânico definido') ?> · <?= date('d/m/Y \à\s H:i', strtotime($os['atualizado_em'])) ?></p>
-                                <?php else: ?>
-                                    <p class="meta">&nbsp;</p>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-        </div>
-
-        <div class="card">
-            <h3 style="margin-bottom:10px;">Cliente</h3>
-            <p style="font-size:12.5px; color:var(--cinza-escuro); margin:0 0 4px;"><?= htmlspecialchars($os['cliente_nome']) ?></p>
-            <p style="font-size:12px; color:var(--cinza-medio); margin:0;"><?= htmlspecialchars($os['cliente_telefone']) ?></p>
-        </div>
-    </div>
+    <a href="ordens_servico.php" class="btn btn-outline btn-sm" style="width:fit-content; padding:8px 18px;">← Voltar para Ordens de Serviço</a>
 
 </div>
-
-<script>
-function mudarAba(nome, btn) {
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('.tab-nav button').forEach(b => b.classList.remove('active'));
-    document.getElementById('painel-' + nome).classList.add('active');
-    btn.classList.add('active');
-}
-</script>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>
